@@ -1,0 +1,12 @@
+{"properties": [
+  {
+    "name": "alert.email",
+    "type": "java.lang.String",
+    "description": "Email address to alert on failed requests"
+  },
+  {
+    "name": "alert.threshold",
+    "type": "java.lang.String",
+    "description": "A limit on allowed number of failed requests."
+  }
+]}
