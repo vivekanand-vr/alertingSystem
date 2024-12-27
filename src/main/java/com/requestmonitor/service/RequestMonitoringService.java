@@ -3,18 +3,21 @@ package com.requestmonitor.service;
 import com.requestmonitor.model.FailedRequest;
 import com.requestmonitor.dao.FailedRequestRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RequestMonitoringService {
     private final FailedRequestRepository failedRequestRepository;
+    private final RequestCacheService cacheService;
     private final JavaMailSender mailSender;
     
     @Value("${alert.threshold:5}")
@@ -24,53 +27,53 @@ public class RequestMonitoringService {
     private String alertEmail;
     
     public void logFailedRequest(FailedRequest request) {
-        failedRequestRepository.save(request);
-        checkAndSendAlert(request.getIpAddress());
-    }
-    
-    private void checkAndSendAlert(String ipAddress) {
-        LocalDateTime now = LocalDateTime.now();
-        List<FailedRequest> recentFailedRequests = failedRequestRepository
-            .findByIpAddressAndTimestampBetween(
-                ipAddress, 
-                now.minusMinutes(10), 
-                now
-            );
+        // Cache the failed request
+        cacheService.cacheFailedRequest(request.getIpAddress(), request);
         
-        if (recentFailedRequests.size() >= alertThreshold) {
-            sendAlertEmail(ipAddress, recentFailedRequests);
+        // Check if threshold is exceeded
+        log.warn("Checking the failed count of the request Ip address in Redis Cache");
+        int failedCount = cacheService.getFailedRequestCount(request.getIpAddress());
+        
+        log.warn("Failed count of " + request.getIpAddress() + " is : " + failedCount);
+        if (failedCount >= alertThreshold) {
+            // Get all failed requests from cache
+            List<FailedRequest> failedRequests = cacheService.getFailedRequests(request.getIpAddress());
+            
+            // Save all requests to database
+            failedRequestRepository.saveAll(failedRequests);
+            
+            // Send alert
+            sendAlertEmail(request.getIpAddress(), failedRequests);
+            
+            // Clear cache for this IP
+            cacheService.clearFailedRequests(request.getIpAddress());
         }
     }
     
     private void sendAlertEmail(String ipAddress, List<FailedRequest> failedRequests) {
-        // Construct the email message
         SimpleMailMessage message = new SimpleMailMessage();
         message.setTo(alertEmail);
         message.setSubject("High Failed Request Alert");
-
-        // Build detailed email text
+        
         StringBuilder emailText = new StringBuilder();
         emailText.append(String.format(
-            "IP Address %s has %d failed requests in the last 10 minutes.\n", 
-            ipAddress, 
+            "IP Address %s has %d failed requests in the last 10 minutes.\n",
+            ipAddress,
             failedRequests.size()
         ));
-        emailText.append("\nDetails of failed requests:\n");
-        emailText.append("\n"); // Next line
-
-        // Include detailed failed requests in the email
+        emailText.append("\nDetails of failed requests:\n\n");
+        
         for (FailedRequest failedRequest : failedRequests) {
             emailText.append(String.format(
-                "Timestamp: %s, Error: %s\n", 
-                failedRequest.getTimestamp(), 
+                "Timestamp: %s, Error: %s\n",
+                failedRequest.getTimestamp(),
                 failedRequest.getFailureReason()
             ));
         }
-
+        
         emailText.append("\nPlease investigate this issue.");
         message.setText(emailText.toString());
-
-        // Send the email
+        
         mailSender.send(message);
     }
     

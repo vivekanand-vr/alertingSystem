@@ -1,17 +1,18 @@
 # Alerting System for Monitoring Failed API Requests
 
-## Overview
-This is a Spring Boot application designed to monitor and track failed API requests and notify, with features including:
-- Request validation
+### Overview
+Spring Boot application for monitoring failed API requests with features:
+- Request validation and caching
 - Failed request logging
 - IP-based alert system
-- Email notifications for suspicious activities
+- Redis caching for optimized performance
+- Email notifications for multiple failed API requests
 
 ### Prerequisites
-- Java 17, MongoDB, Maven, Gmail account (for SMTP email alerts)
+- Java 17, Maven, Redis, MongoDB, Gmail account (for SMTP email alerts)
 
 ### Technology Stack
-- Spring Boot 3.2.1, MongoDB, Java Mail Sender, Lombok
+- Spring Boot 3.2.1, Redis, MongoDB, Java Mail Sender, Lombok, Jackson JSR310
 
 ## Configuration Steps
 
@@ -36,14 +37,28 @@ server.tomcat.threads.max=200
 server.tomcat.max-connections=10000
 ```
 
-### 3. Configure MongoDB
+### 3. Setup Redis
+- Install Redis
+- Start Redis server
+- Verify connection: `redis-cli ping`
+```properties
+# Redis Configuration
+spring.redis.host=localhost
+spring.redis.port=6379
+
+# Jackson Configuration
+spring.jackson.serialization.WRITE_DATES_AS_TIMESTAMPS=false
+spring.jackson.date-format=yyyy-MM-dd HH:mm:ss
+```
+
+### 4. Configure MongoDB
 - Open `src/main/resources/application.properties`
 - Ensure MongoDB is running locally
 - Default connection: `mongodb://localhost:27017/<your-db-name>`
 
-### 4. Configure Email Settings
-1. Open `src/main/resources/application.properties`
-2. Update email configuration:
+### 5. Configure Email Settings
+- Open `src/main/resources/application.properties`
+- Update email configuration:
 ```properties
 spring.mail.host=smtp.gmail.com
 spring.mail.port=587
@@ -51,13 +66,13 @@ spring.mail.username=your-email@gmail.com
 spring.mail.password=your-app-password
 ```
 
-### 5. Generate App Password for Gmail
+### 6. Generate App Password for Gmail
 - Go to Google Account
 - Security > 2-Step Verification
 - App Passwords > Select App (Mail) > Generate
 - Use generated password in `application.properties`
 
-### 5. Build and Run the Application
+### 7. Build and Run the Application
 ```bash
 # Build the project
 mvn clean package
@@ -95,6 +110,12 @@ curl -X POST "http://localhost:8080/api/submit?clientId=123&version=1.0" \
      -d '{"name":"John Doe","description":"Sample Description"}'
 ```
 
+## Architecture
+- Failed requests cached in Redis (10-minute window)
+- Batch writes to MongoDB on threshold breach
+- Email alerts sent for suspicious activity
+- Path validation for /api/submit endpoint
+
 ## Logging
 - Failed requests are logged in MongoDB
 - Email alerts sent when failure threshold is reached
@@ -111,6 +132,7 @@ Modify `application.properties` to adjust:
 - SMTP settings
 
 ## Troubleshooting
-- Ensure MongoDB is running
+- Verify Redis and MongoDB services
 - Check SMTP credentials
-- Verify network configurations
+- Confirm network configurations
+- Monitor Redis cache status
