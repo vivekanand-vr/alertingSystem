@@ -11,63 +11,77 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
 @RequiredArgsConstructor
-public class SubmitController {
+public class RequestMonitorController {
     private final RequestMonitoringService monitoringService;
     
-    // Hardcoded valid authorization token and required params
     private static final String VALID_AUTH_TOKEN = "Bearer FIXED_SECRET_TOKEN_2024";
     private static final List<String> REQUIRED_PARAMS = List.of("clientId", "version");
+    private static final String VALID_BASE_PATH = "/api";
+    private static final String VALID_ENDPOINT = "/submit";
     
-    @RequestMapping("/submit")
-    public ResponseEntity<?> submitRequest(
+    @RequestMapping("/**")
+    public ResponseEntity<?> handleAllRequests(
         @RequestHeader(value = "Authorization", required = false) String authToken,
         @RequestHeader(value = "X-Custom-Header", required = false) String customHeader,
         @RequestParam Map<String, String> allParams,
         HttpServletRequest request,
         @RequestBody(required = false) SubmitRequestDTO requestDTO
     ) {
+        // Validate URL path
+        String requestPath = request.getRequestURI();
+        if (!isValidPath(requestPath)) {
+        	return handleError(request, 
+                HttpStatus.NOT_FOUND, 
+                "Invalid request path"
+            );
+        }
+        
         // Check for allowed HTTP method
         if (!request.getMethod().equals(HttpMethod.POST.name())) {
-            logFailedRequest(request, "Method Not Allowed: Only POST is supported");
-            return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
-                .body("Error: Only POST method is allowed on this endpoint");
+            return handleError(request,
+                HttpStatus.METHOD_NOT_ALLOWED,
+                "Method Not Allowed: Only POST is supported"
+            );
         }
         
         // Validate authorization token
         if (authToken == null || !authToken.equals(VALID_AUTH_TOKEN)) {
-            logFailedRequest(request, "Invalid or Missing Authorization Token");
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body("Error: Invalid or missing authorization token");
+        	return handleError(request,
+                HttpStatus.UNAUTHORIZED,
+                "Invalid or Missing Authorization Token"
+            );
         }
         
         // Validate custom header
         if (customHeader == null || customHeader.isEmpty()) {
-            logFailedRequest(request, "Missing Custom Header");
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body("Error: Custom header is required");
+            return handleError(request,
+                HttpStatus.BAD_REQUEST,
+                "Missing Custom Header"
+            );
         }
         
         // Validate required parameters
         for (String requiredParam : REQUIRED_PARAMS) {
             if (!allParams.containsKey(requiredParam)) {
-                logFailedRequest(request, "Missing Required Parameter: " + requiredParam);
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body("Error: Missing required parameter: " + requiredParam);
+                return handleError(request,
+                    HttpStatus.BAD_REQUEST,
+                    "Missing Required Parameter: " + requiredParam
+                );
             }
         }
         
         // Validate request body
         if (requestDTO == null) {
-            logFailedRequest(request, "Empty Request Body");
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body("Error: Request body is required and cannot be empty");
+            return handleError(request,
+                HttpStatus.BAD_REQUEST,
+                "Request body is required and cannot be empty"
+            );
         }
         
         // If all validations pass, process the request
@@ -79,14 +93,22 @@ public class SubmitController {
         return ResponseEntity.ok(monitoringService.getFailedRequestMetrics());
     }
     
-    private void logFailedRequest(HttpServletRequest request, String reason) {
+    private boolean isValidPath(String path) {
+        return path.equals(VALID_BASE_PATH + VALID_ENDPOINT);
+    }
+    
+    private ResponseEntity<?> handleError(HttpServletRequest request, HttpStatus status, String message) {
+        monitoringService.logFailedRequest(createFailedRequest(request, message));
+        return ResponseEntity.status(status).body("Error: " + message);
+    }
+    
+    private FailedRequest createFailedRequest(HttpServletRequest request, String reason) {
         FailedRequest failedRequest = new FailedRequest();
         failedRequest.setIpAddress(request.getRemoteAddr());
         failedRequest.setRequestPath(request.getRequestURI());
         failedRequest.setFailureReason(reason);
-        failedRequest.setTimestamp(LocalDateTime.now());
+        failedRequest.setTimestamp(java.time.LocalDateTime.now());
         failedRequest.setRequestMethod(request.getMethod());
-        
-        monitoringService.logFailedRequest(failedRequest);
+        return failedRequest;
     }
 }
