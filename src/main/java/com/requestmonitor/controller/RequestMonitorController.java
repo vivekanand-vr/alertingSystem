@@ -3,6 +3,7 @@ package com.requestmonitor.controller;
 import com.requestmonitor.dto.SubmitRequestDTO;
 import com.requestmonitor.model.FailedRequest;
 import com.requestmonitor.service.RequestMonitoringService;
+import com.requestmonitor.utils.RequestUtils;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 
@@ -22,8 +23,7 @@ public class RequestMonitorController {
     
     private static final String VALID_AUTH_TOKEN = "Bearer FIXED_SECRET_TOKEN_2024";
     private static final List<String> REQUIRED_PARAMS = List.of("clientId", "version");
-    private static final String VALID_BASE_PATH = "/api";
-    private static final String VALID_ENDPOINT = "/submit";
+    private RequestUtils utils = new RequestUtils();
     
     @RequestMapping("/**")
     public ResponseEntity<?> handleAllRequests(
@@ -35,7 +35,7 @@ public class RequestMonitorController {
     ) {
         // Validate URL path
         String requestPath = request.getRequestURI();
-        if (!isValidPath(requestPath)) {
+        if (!utils.isValidPath(requestPath)) {
         	return handleError(request, 
                 HttpStatus.NOT_FOUND, 
                 "Invalid request path"
@@ -93,22 +93,10 @@ public class RequestMonitorController {
         return ResponseEntity.ok(monitoringService.getFailedRequestMetrics());
     }
     
-    private boolean isValidPath(String path) {
-        return path.equals(VALID_BASE_PATH + VALID_ENDPOINT);
-    }
-    
     private ResponseEntity<?> handleError(HttpServletRequest request, HttpStatus status, String message) {
-        monitoringService.logFailedRequest(createFailedRequest(request, message));
+        monitoringService.logFailedRequest(utils.createFailedRequest(request, message));
         return ResponseEntity.status(status).body("Error: " + message);
     }
     
-    private FailedRequest createFailedRequest(HttpServletRequest request, String reason) {
-        FailedRequest failedRequest = new FailedRequest();
-        failedRequest.setIpAddress(request.getRemoteAddr());
-        failedRequest.setRequestPath(request.getRequestURI());
-        failedRequest.setFailureReason(reason);
-        failedRequest.setTimestamp(java.time.LocalDateTime.now());
-        failedRequest.setRequestMethod(request.getMethod());
-        return failedRequest;
-    }
+    
 }
